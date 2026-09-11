@@ -17,6 +17,30 @@ public partial class ObservableTrackerTab : VBoxContainer
     ObservableTrackerDebuggerPlugin? debuggerPlugin;
     int interval = 0;
     int sessionId = 0;
+    bool sessionFailed;
+
+    public bool SessionFailed => sessionFailed;
+
+    void RunTrackerAction(Action action)
+    {
+        if (sessionFailed)
+        {
+            return;
+        }
+
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            sessionFailed = true;
+            SetProcess(false);
+            GD.PushWarning(
+                $"R3 Observable Tracker paused for this debugging session: {exception.Message} "
+                + "It will retry when the next session starts.");
+        }
+    }
 
     public void NotifyOnSessionSetup(ObservableTrackerDebuggerPlugin debuggerPlugin, int sessionId)
     {
@@ -28,7 +52,12 @@ public partial class ObservableTrackerTab : VBoxContainer
 
     public void NotifyOnSessionStart()
     {
-        debuggerPlugin!.SetEnableStates(sessionId, enableTracking, enableStackTrace);
+        sessionFailed = false;
+        RunTrackerAction(() =>
+        {
+            debuggerPlugin!.SetEnableStates(sessionId, enableTracking, enableStackTrace);
+            SetProcess(true);
+        });
     }
 
     public override void _Ready()
@@ -73,14 +102,16 @@ public partial class ObservableTrackerTab : VBoxContainer
         {
             settings.SetSetting(EnableTrackingKey, toggledOn);
             enableTracking = toggledOn;
-            debuggerPlugin!.SetEnableStates(sessionId, enableTracking, enableStackTrace);
+            RunTrackerAction(() =>
+                debuggerPlugin!.SetEnableStates(sessionId, enableTracking, enableStackTrace));
         };
         enableStackTraceToggle.ButtonPressed = enableStackTrace = GetSettingOrDefault(settings, EnableStackTraceKey, false).AsBool();
         enableStackTraceToggle.Toggled += toggledOn =>
         {
             settings.SetSetting(EnableStackTraceKey, toggledOn);
             enableStackTrace = toggledOn;
-            debuggerPlugin!.SetEnableStates(sessionId, enableTracking, enableStackTrace);
+            RunTrackerAction(() =>
+                debuggerPlugin!.SetEnableStates(sessionId, enableTracking, enableStackTrace));
         };
 
         // Regular buttons (top right)
@@ -97,11 +128,11 @@ public partial class ObservableTrackerTab : VBoxContainer
 
         reloadButton.Pressed += () =>
         {
-            debuggerPlugin!.UpdateTrackingStates(sessionId, true);
+            RunTrackerAction(() => debuggerPlugin!.UpdateTrackingStates(sessionId, true));
         };
         GCButton.Pressed += () =>
         {
-            debuggerPlugin!.InvokeGCCollect(sessionId);
+            RunTrackerAction(() => debuggerPlugin!.InvokeGCCollect(sessionId));
         };
 
         // Button layout.
@@ -126,7 +157,7 @@ public partial class ObservableTrackerTab : VBoxContainer
         {
             if (interval++ % 120 == 0)
             {
-                debuggerPlugin!.UpdateTrackingStates(sessionId);
+                RunTrackerAction(() => debuggerPlugin!.UpdateTrackingStates(sessionId));
             }
         }
     }

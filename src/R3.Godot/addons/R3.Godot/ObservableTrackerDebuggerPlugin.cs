@@ -27,6 +27,7 @@ public partial class ObservableTrackerDebuggerPlugin : EditorDebuggerPlugin
     // There's no way to know if a session has been disposed for good, so we will never remove anything from this dictionary.
     // This is similar to how it is handled in the Godot core (see: https://github.com/godotengine/godot/blob/master/modules/multiplayer/editor/multiplayer_editor_plugin.cpp)
     readonly Dictionary<int, TrackerSession> sessions = new();
+    readonly HashSet<int> failedCaptures = new();
 
     private class TrackerSession
     {
@@ -58,6 +59,7 @@ public partial class ObservableTrackerDebuggerPlugin : EditorDebuggerPlugin
         // As sessions don't seem to be ever disposed, we don't need to unregister these callbacks either.
         currentSession.Started += () =>
         {
+            failedCaptures.Remove(sessionId);
             if (IsInstanceValid(tab))
             {
                 tab.SetProcess(true);
@@ -80,6 +82,27 @@ public partial class ObservableTrackerDebuggerPlugin : EditorDebuggerPlugin
     }
 
     public override bool _Capture(string message, GDArray data, int sessionId)
+    {
+        if (failedCaptures.Contains(sessionId))
+        {
+            return true;
+        }
+
+        try
+        {
+            return CaptureTrackingStates(message, data, sessionId);
+        }
+        catch (Exception exception)
+        {
+            failedCaptures.Add(sessionId);
+            GD.PushWarning(
+                $"R3 Observable Tracker updates paused for session {sessionId}: {exception.Message} "
+                + "It will retry when the next session starts.");
+            return true;
+        }
+    }
+
+    bool CaptureTrackingStates(string message, GDArray data, int sessionId)
     {
         // When EditorDebuggerPlugin._Capture receives messages, the header isn't trimmed (unlike how it is in EngineDebugger),
         // so we need to trim it here.

@@ -44,7 +44,18 @@ public partial class ObservableTrackerTree : Tree
 
     public override void _ExitTree()
     {
-        debuggerPlugin!.UnregisterReceivedActiveTasks(sessionId, Reload);
+        // Assembly reload may have cleared the managed session reference.
+        try
+        {
+            if (IsInstanceValid(debuggerPlugin))
+            {
+                debuggerPlugin!.UnregisterReceivedActiveTasks(sessionId, Reload);
+            }
+        }
+        catch (Exception exception)
+        {
+            GD.PushWarning($"R3 Observable Tracker cleanup failed: {exception.Message}");
+        }
     }
 
     public void Reload(IEnumerable<TrackingState> states)
